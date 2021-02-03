@@ -157,19 +157,33 @@ namespace FF1Lib
 
 		const ushort TalkFight = 0x94AA;
 
+		bool IsBattleTile(Blob tuple) => tuple[0] == 0x0A;
+		bool IsRandomBattleTile(Blob tuple) => IsBattleTile(tuple) && (tuple[1] & 0x80) != 0x00;
+		bool IsNonBossTrapTile(Blob tuple) => IsBattleTile(tuple) && tuple[1] > 0 && tuple[1] < FirstBossEncounterIndex;
+		bool IsBossTrapTile(Blob tuple) => IsBattleTile(tuple) && tuple[1] > 0 && tuple[1] >= FirstBossEncounterIndex;
+
+		public void RemoveTrapTiles()
+		{
+			// This must be called before shuffle trap tiles since it uses the vanilla format for random encounters
+			var tilesets = Get(TilesetDataOffset, TilesetDataCount * TilesetDataSize * TilesetCount).Chunk(TilesetDataSize).ToList();
+			tilesets.ForEach(tile =>
+			{
+				if (IsNonBossTrapTile(tile))
+				{
+					tile[1] = 0x80;
+				}
+			});
+			Put(TilesetDataOffset, tilesets.SelectMany(tileset => tileset.ToBytes()).ToArray());
+		}
+
 		public void ShuffleTrapTiles(MT19337 rng, bool randomize)
 		{
 			// This is magic BNE code that enables formation 1 trap tiles but we have to change
 			// all the 0x0A 0x80 into 0x0A 0x00 and use 0x00 for random encounters instead of 0x80.
 			Data[0x7CDC5] = 0xD0;
-
-			bool IsBattleTile(Blob tuple) => tuple[0] == 0x0A;
-			bool IsRandomBattleTile(Blob tuple) => IsBattleTile(tuple) && (tuple[1] & 0x80) != 0x00;
-			bool IsNonBossTrapTile(Blob tuple) => IsBattleTile(tuple) && tuple[1] > 0 && tuple[1] < FirstBossEncounterIndex;
-
 			var tilesets = Get(TilesetDataOffset, TilesetDataCount * TilesetDataSize * TilesetCount).Chunk(TilesetDataSize).ToList();
-			List<byte> encounters;
 
+			List<byte> encounters;
 			if (randomize)
 			{
 				encounters = Enumerable.Range(128, FirstBossEncounterIndex).Select(value => (byte)value).ToList();
@@ -447,29 +461,26 @@ namespace FF1Lib
 			const byte RobotGfx = 0x15;
 
 			// Set up the map object.
-			Put(MapObjOffset + (byte)ObjectId.WarMECH * MapObjSize, new[] { (byte)ObjectId.WarMECH, UnusedTextPointer, (byte)0x00, WarMECHEncounter });
+			PutInBank(newTalkRoutinesBank, lut_MapObjTalkData + (byte)ObjectId.WarMECH * MapObjSize, new[] { (byte)ObjectId.WarMECH, UnusedTextPointer, (byte)0x00, WarMECHEncounter });
 			Data[MapObjGfxOffset + (byte)ObjectId.WarMECH] = RobotGfx;
 
 			// Set the action when you talk to WarMECH.
-			Put(MapObjJumpTableOffset + (byte)ObjectId.WarMECH * JumpTablePointerSize, Blob.FromUShorts(new[] { TalkFight }));
+			PutInBank(newTalkRoutinesBank, lut_MapObjTalkJumpTbl + (byte)ObjectId.WarMECH * JumpTablePointerSize, newTalk.Talk_fight);
 
 			// Change the dialogue.
-			var dialogueStrings = new List<Blob>
+			var dialogueStrings = new List<string>
 			{
-				TextToBytes("I. aM. WarMECH."),
-				Blob.Concat(TextToBytes("I think you ought to", delimiter: Delimiter.Line), TextToBytes("know, I'm feeling very", delimiter: Delimiter.Line), TextToBytes("depressed.")),
-				TextToBytes("Bite my shiny metal ass!"),
-				Blob.Concat(TextToBytes("Put down your weapons.", delimiter: Delimiter.Line), TextToBytes("You have 15 seconds to", delimiter: Delimiter.Line), TextToBytes("comply.")),
-				// Blob.Concat(TextToBytes("I'm sorry "), new byte[] { 0x03 }, TextToBytes(",", delimiter: Delimiter.Line), TextToBytes("I'm afraid I can't do that.")),
-				TextToBytes("rEsIsTaNcE iS fUtIlE."),
-				TextToBytes("Hasta la vista, baby."),
-				TextToBytes("NoOo DiSaSsEmBlE!"),
-				Blob.Concat(TextToBytes("Bring back life form.", delimiter: Delimiter.Line), TextToBytes("Priority one.", delimiter: Delimiter.Line), TextToBytes("All other priorities", delimiter: Delimiter.Line), TextToBytes("rescinded."))
+				"I. aM. WarMECH.",
+				"I think you ought to\nknow, I'm feeling very\ndepressed.",
+				"Bite my shiny metal ass!",
+				"Put down your weapons.\nYou have 15 seconds to\ncomply.",
+				"rEsIsTaNcE iS fUtIlE.",
+				"Hasta la vista, baby.",
+				"NoOo DiSaSsEmBlE!",
+				"Bring back life form.\nPriority one.\nAll other priorities\nrescinded."
 			};
-			ushort freeTextSpacePointer = 0xB487;
-			int pointerTarget = 0x20000 + freeTextSpacePointer;
-			Put(pointerTarget, dialogueStrings.PickRandom(rng));
-			Put(DialogueTextPointerOffset + 2 * UnusedTextPointer, Blob.FromUShorts(new[] { freeTextSpacePointer }));
+
+			InsertDialogs(UnusedTextPointer, dialogueStrings.PickRandom(rng));
 
 			// Get rid of random WarMECH encounters.  Group 8 is now also group 7.
 			var formationOffset = ZoneFormationsOffset + ZoneFormationsSize * (64 + (byte)MapId.SkyPalace5F);
@@ -527,6 +538,26 @@ namespace FF1Lib
 			Data[offset + 2] = (byte)y;
 		}
 
+		public NPC FindNpc(MapId mapId, ObjectId mapObjId)
+		{
+			var tempNPC = new NPC();
+
+			for (int i = 0; i < MapSpriteCount; i++)
+			{
+				int offset = MapSpriteOffset + ((byte)mapId * MapSpriteCount + i) * MapSpriteSize;
+
+				if (Data[offset] == (byte)mapObjId)
+				{
+					tempNPC.Index = i;
+					tempNPC.Coord = (Data[offset + 1] & 0x3F, Data[offset + 2]);
+					tempNPC.InRoom = (Data[offset + 1] & 0x80) > 0;
+					tempNPC.Stationary = (Data[offset + 1] & 0x40) > 0;
+					break;
+				}
+			}
+
+			return tempNPC;
+		}
 		public List<Map> ReadMaps()
 		{
 			var pointers = Get(MapPointerOffset, MapCount * MapPointerSize).ToUShorts();
