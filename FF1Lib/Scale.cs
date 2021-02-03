@@ -37,9 +37,29 @@ namespace FF1Lib
 		OrbProgressiveVFast,
 	}
 
+	public enum EvadeCapValues
+	{
+		[Description("Very low, 225")]
+		veryLow,
+		[Description("low, 230")]
+		low,
+		[Description("medium low, 235")]
+		medLow,
+		[Description("medium, 240")]
+		medium,
+		[Description("medium high, 245")]
+		medHigh,
+		[Description("high, 250")]
+		high,
+		[Description("extreme, 253")]
+		extreme,
+		[Description("insane, 255")]
+		insane,
+	}
+
 	public partial class FF1Rom : NesRom
 	{
-		public static readonly List<int> Bosses = new List<int> { Enemy.Garland, Enemy.Astos, Enemy.WarMech,
+		public static readonly List<int> Bosses = new List<int> { Enemy.Garland, Enemy.Astos, Enemy.Pirate, Enemy.WarMech,
 			Enemy.Lich, Enemy.Lich2, Enemy.Kary, Enemy.Kary2, Enemy.Kraken, Enemy.Kraken2, Enemy.Tiamat, Enemy.Tiamat2, Enemy.Chaos };
 
 		public static readonly List<int> NonBossEnemies = Enumerable.Range(0, EnemyCount).Where(x => !Bosses.Contains(x)).ToList();
@@ -57,12 +77,17 @@ namespace FF1Lib
 		// instead of enemies giving more gold, so we don't overflow.
 		public void ScalePrices(IScaleFlags flags, string[] text, MT19337 rng, bool increaseOnly, ItemShopSlot shopItemLocation)
 		{
-			var scale = flags.PriceScaleFactor;
+			int rawScaleLow = increaseOnly ? 100 : flags.PriceScaleFactorLow;
+			int rawScaleHigh = increaseOnly ? Math.Max(100, flags.PriceScaleFactorHigh) : flags.PriceScaleFactorHigh;
+
+			double scaleLow = (double)rawScaleLow / 100.0;
+			double scaleHigh = (double)rawScaleHigh / 100.0;
+
 			var multiplier = flags.ExpMultiplier;
 			var prices = Get(PriceOffset, PriceSize * PriceCount).ToUShorts();
 			for (int i = 0; i < prices.Length; i++)
 			{
-				var newPrice = Scale(prices[i] / multiplier, scale, 1, rng, increaseOnly);
+				var newPrice = RangeScale(prices[i] / multiplier, scaleLow, scaleHigh, 1, rng);
 				prices[i] = (ushort)(flags.WrapPriceOverflow ? ((newPrice - 1) % 0xFFFF) + 1 : Min(newPrice, 0xFFFF));
 			}
 			var questItemPrice = prices[(int)Item.Bottle];
@@ -100,7 +125,7 @@ namespace FF1Lib
 					var priceBytes = Get(ShopPointerBase + pointers[i], 2);
 					var priceValue = BitConverter.ToUInt16(priceBytes, 0);
 
-					priceValue = (ushort)Scale(priceValue / multiplier, scale, 1, rng, increaseOnly);
+					priceValue = (ushort)RangeScale(priceValue / multiplier, scaleLow, scaleHigh, 1, rng);
 					priceBytes = BitConverter.GetBytes(priceValue);
 					Put(ShopPointerBase + pointers[i], priceBytes);
 				}
@@ -109,39 +134,101 @@ namespace FF1Lib
 			{
 				var startingGold = BitConverter.ToUInt16(Get(StartingGoldOffset, 2), 0);
 
-				startingGold = (ushort)Min(Scale(startingGold / multiplier, scale, 1, rng, increaseOnly), 0xFFFF);
+				startingGold = (ushort)Min(RangeScale(startingGold / multiplier, scaleLow, scaleHigh, 1, rng), 0xFFFF);
 
 				Put(StartingGoldOffset, BitConverter.GetBytes(startingGold));
 			}
 
 		}
 
-		public void ScaleEnemyStats(double scale, bool wrapOverflow, bool includeMorale, MT19337 rng, bool increaseOnly)
+		public int GetEvadeIntFromFlag(EvadeCapValues evadeCapFlag)
 		{
-			NonBossEnemies.ForEach(index => ScaleSingleEnemyStats(index, scale, wrapOverflow, includeMorale, rng, increaseOnly));
+			int evadeCap;
+			switch (evadeCapFlag)
+			{
+				case EvadeCapValues.veryLow:
+					evadeCap = 0xE1;
+					break;
+				case EvadeCapValues.low:
+					evadeCap = 0xE6;
+					break;
+				case EvadeCapValues.medLow:
+					evadeCap = 0xEB;
+					break;
+				case EvadeCapValues.medium:
+					evadeCap = 0xF0;
+					break;
+				case EvadeCapValues.medHigh:
+					evadeCap = 0xF5;
+					break;
+				case EvadeCapValues.high:
+					evadeCap = 0xFA;
+					break;
+				case EvadeCapValues.extreme:
+					evadeCap = 0xFC;
+					break;
+				case EvadeCapValues.insane:
+					evadeCap = 0xFF;
+					break;
+				default:
+					evadeCap = 0xF0;
+					break;
+			}
+
+			return evadeCap;
+
 		}
 
-		public void ScaleBossStats(double scale, bool wrapOverflow, bool includeMorale, MT19337 rng, bool increaseOnly)
+		public void ScaleEnemyStats(MT19337 rng, Flags flags)
 		{
-			Bosses.ForEach(index => ScaleSingleEnemyStats(index, scale, wrapOverflow, includeMorale, rng, increaseOnly));
+			int minStats = (bool)flags.ClampMinimumStatScale ? 100 : flags.EnemyScaleStatsLow;
+			int highStats = (bool)flags.ClampMinimumStatScale ? Math.Max(100, flags.EnemyScaleStatsHigh) : flags.EnemyScaleStatsHigh;
+			int minHp = (bool)flags.ClampEnemyHpScaling ? 100 : flags.EnemyScaleHpLow;
+			int highHp = (bool)flags.ClampEnemyHpScaling ? Math.Max(100, flags.EnemyScaleHpHigh) : flags.EnemyScaleHpHigh;
+
+			NonBossEnemies.ForEach(index => ScaleSingleEnemyStats(index, minStats, highStats, flags.WrapStatOverflow, flags.IncludeMorale, rng,
+				(bool)flags.SeparateEnemyHPScaling, minHp, highHp, GetEvadeIntFromFlag(flags.EvadeCap)));
 		}
 
-		public void ScaleSingleEnemyStats(int index, double scale, bool wrapOverflow, bool includeMorale, MT19337 rng, bool increaseOnly)
+
+		public void ScaleBossStats(MT19337 rng, Flags flags)
 		{
+			int minStats = (bool)flags.ClampMinimumBossStatScale ? 100 : flags.BossScaleStatsLow;
+			int highStats = (bool)flags.ClampMinimumBossStatScale ? Math.Max(100, flags.BossScaleStatsHigh) : flags.BossScaleStatsHigh;
+			int minHp = (bool)flags.ClampBossHPScaling ? 100 : flags.BossScaleHpLow;
+			int highHp = (bool)flags.ClampBossHPScaling ? Math.Max(100, flags.BossScaleHpHigh) : flags.BossScaleHpHigh;
+			Bosses.ForEach(index => ScaleSingleEnemyStats(index, minStats, highStats, flags.WrapStatOverflow, flags.IncludeMorale, rng,
+				(bool)flags.SeparateBossHPScaling, minHp, highHp, GetEvadeIntFromFlag(flags.EvadeCap)));
+		}
+
+		public void ScaleSingleEnemyStats(int index, int lowPercentStats, int highPercentStats, bool wrapOverflow, bool includeMorale, MT19337 rng,
+			bool separateHPScale, int lowPercentHp, int highPercentHp, int evadeClamp)
+		{
+			double lowDecimalStats = (double)lowPercentStats / 100.0;
+			double highDecimalStats = (double)highPercentStats / 100.0;
+			double lowDecimalHp = (double)lowPercentHp / 100.0;
+			double highDecimalHp = (double)highPercentHp / 100.0;
+
 			var enemy = Get(EnemyOffset + index * EnemySize, EnemySize);
 
 			var hp = BitConverter.ToUInt16(enemy, 4);
-			hp = (ushort)Min(Scale(hp, scale, 1.0, rng, increaseOnly), 0x7FFF);
+			if(separateHPScale)
+			{
+				hp = (ushort)Min(RangeScale(hp, lowDecimalHp, highDecimalHp, 1.0, rng), 0x7FFF);
+			} else
+			{
+				hp = (ushort)Min(RangeScale(hp, lowDecimalStats, highDecimalStats, 1.0, rng), 0x7FFF);
+			}
 			var hpBytes = BitConverter.GetBytes(hp);
 			Array.Copy(hpBytes, 0, enemy, 4, 2);
 
-			var newMorale = includeMorale ? Scale(enemy[6], scale, 0.25, rng, increaseOnly) : enemy[6];
-			var newEvade = Scale(enemy[8], scale, 1.0, rng, increaseOnly);
-			var newDefense = Scale(enemy[9], scale, 0.5, rng, increaseOnly);
-			var newHits = Scale(enemy[10], scale, 0.5, rng, increaseOnly);
-			var newHitPercent = Scale(enemy[11], scale, 1.0, rng, increaseOnly);
-			var newStrength = Scale(enemy[12], scale, 0.25, rng, increaseOnly);
-			var newCrit = Scale(enemy[13], scale, 0.5, rng, increaseOnly);
+			var newMorale = includeMorale ? RangeScale(enemy[6], lowDecimalStats, highDecimalStats, 0.25, rng) : enemy[6];
+			var newEvade = RangeScale(enemy[8], lowDecimalStats, highDecimalStats, 1.0, rng);
+			var newDefense = RangeScale(enemy[9], lowDecimalStats, highDecimalStats, 0.5, rng);
+			var newHits = RangeScale(enemy[10], lowDecimalStats, highDecimalStats, 0.5, rng);
+			var newHitPercent = RangeScale(enemy[11], lowDecimalStats, highDecimalStats, 1.0, rng);
+			var newStrength = RangeScale(enemy[12], lowDecimalStats, highDecimalStats, 0.25, rng);
+			var newCrit = RangeScale(enemy[13], lowDecimalStats, highDecimalStats, 0.5, rng);
 			if (wrapOverflow)
 			{
 				newEvade = ((newEvade - 1) % 0xFF) + 1;
@@ -152,7 +239,7 @@ namespace FF1Lib
 				newCrit = ((newCrit - 1) % 0xFF) + 1;
 			}
 			enemy[6] = (byte)Min(newMorale, 0xFF); // morale
-			enemy[8] = (byte)Min(newEvade, 0xF0); // evade clamped to 240
+			enemy[8] = (byte)Min(newEvade, evadeClamp); // evade
 			enemy[9] = (byte)Min(newDefense, 0xFF); // defense
 			enemy[10] = (byte)Max(Min(newHits, 0xFF), 1); // hits
 			enemy[11] = (byte)Min(newHitPercent, 0xFF); // hit%
@@ -160,6 +247,27 @@ namespace FF1Lib
 			enemy[13] = (byte)Min(newCrit, 0xFF); // critical%
 
 			Put(EnemyOffset + index * EnemySize, enemy);
+		}
+
+		private int RangeScale(double value, double lowPercent, double highPercent, double adjustment, MT19337 rng)
+		{
+			double exponent = (rng != null) ? (double)rng.Next() / uint.MaxValue : 1.0; // A number from 0 - 1
+			double logLowPercent = Log(lowPercent);
+			double logDifference = Log(highPercent) - logLowPercent;
+			exponent = exponent * logDifference + logLowPercent; // For example for 50-200% a number from -0.69 to 0.69, for 200-400% a number from 0.69 to 1.38
+	
+			double scaleValue = Exp(exponent); // A number from 0.5 to 2, or 2 to 4
+			double adjustedScale = scaleValue > 1 ? (scaleValue - 1) * adjustment + 1 : 1 - ((1 - scaleValue) * adjustment); // Tightens the scale so some stats are not changed by as much. For example for strength (adjustment of 0.25) this becomes 0.875 to 1.25, 1.25 to 1.75 while for hp (adjustment of 1) this stays 0.5 to 2, 2 to 4
+			return (int)Round(value * adjustedScale);
+		}
+		// Previous RangeScale(), delete if no bugs come up with new RangeScale() - 2020-10-27
+		private int oldRangeScale(double value, double lowPercent, double highPercent, double adjustment, MT19337 rng)
+		{
+			double range = highPercent - lowPercent;
+			double randomRangeScale = rng == null ? range : range * ((double)rng.Next() / uint.MaxValue);
+			double actualScale = lowPercent + randomRangeScale;
+			double adjustedScale = actualScale > 1 ? (actualScale - 1) * adjustment + 1 : 1 - ((1 - actualScale) * adjustment);
+			return (int)(adjustedScale * value);
 		}
 
 		private int Scale(double value, double scale, double adjustment, MT19337 rng, bool increaseOnly)
@@ -292,6 +400,23 @@ namespace FF1Lib
 			byte firstLevelRequirement = Data[0x7C04B];
 			firstLevelRequirement = (byte)(firstLevelRequirement / multiplier);
 			Data[0x7C04B] = firstLevelRequirement;
+		}
+
+		public void EnableSwolePirates()
+		{
+			EnemyInfo newPirate = new EnemyInfo();
+			newPirate.decompressData(Get(EnemyOffset + EnemySize * Enemy.Pirate, EnemySize));
+			newPirate.exp = 800;
+			newPirate.gp = 800;
+			newPirate.hp = 160;
+			newPirate.num_hits = 2;
+			newPirate.damage = 32;
+			newPirate.absorb = 32;
+			newPirate.mdef = 30;
+			newPirate.accuracy = 35;
+			newPirate.critrate = 5;
+			newPirate.agility = 24;
+			Put(EnemyOffset + EnemySize * Enemy.Pirate, newPirate.compressData());
 		}
 	}
 }

@@ -26,9 +26,12 @@
 		bool? IncentivizeTitansTrove { get; }
 		bool? IncentivizeEarth { get; }
 		bool? IncentivizeSeaShrine { get; }
+		bool? IncentivizeRandomChestInLocation { get; }
+		bool? IncentivizeRandomChestIncludeExtra { get; }
 
 		bool? IncentivizeXcalber { get; }
 		bool? IncentivizeMasamune { get; }
+		bool? IncentivizeKatana { get; }
 		bool? IncentivizeVorpal { get; }
 		bool? IncentivizeRibbon { get; }
 		bool IncentivizeBridge { get; }
@@ -61,6 +64,7 @@
 		bool? IncentivizeOpal { get; }
 		bool Incentivize65K { get; }
 		bool IncentivizeBad { get; }
+		bool? NoMasamune { get; }
 	}
 	public interface IMapEditFlags : IItemPlacementFlags
 	{
@@ -80,6 +84,11 @@
 		bool? RandomWares { get; }
 		bool? RandomLoot { get; }
 		bool? BetterTrapChests { get; }
+		bool? EarlierRuby { get; }
+		bool? GuaranteedRuseItem { get; }
+		bool? GuaranteedMasamune { get; }
+		bool? SendMasamuneHome { get; }
+		bool? NoMasamune { get; }
 		WorldWealthMode WorldWealth { get; }
 	}
 	public interface IItemShuffleFlags
@@ -87,6 +96,7 @@
 		bool? Treasures { get; }
 		bool? NPCItems { get; }
 		bool? NPCFetchItems { get; }
+		bool? EarlyKing { get; }
 		bool? EarlySarda { get; }
 		bool? EarlySage { get; }
 		bool? EarlyOrdeals { get; }
@@ -97,7 +107,8 @@
 		bool WrapPriceOverflow { get; }
 		bool WrapStatOverflow { get; }
 		double ExpMultiplier { get; }
-		double PriceScaleFactor { get; }
+		int PriceScaleFactorLow { get; }
+		int PriceScaleFactorHigh { get; }
 	}
 	public interface IFloorShuffleFlags
 	{
@@ -111,7 +122,7 @@
 		bool? AllowDeepCastles { get; }
 		bool? DeepTownsPossible { get; }
 		bool? AllowDeepTowns { get; }
-		bool AllowStartAreaDanager { get; }
+		bool? AllowUnsafeStartArea { get; }
 	}
 	public interface IVictoryConditionFlags
 	{
@@ -122,7 +133,9 @@
 		bool? FreeAirship { get; }
 		bool? FreeShip { get; }
 		bool? FreeCanal { get; }
+		bool? FreeCanoe { get; }
 		bool? FreeLute { get; }
 		bool? FreeTail { get; }
+		bool? NoTail { get; }
 	}
 }

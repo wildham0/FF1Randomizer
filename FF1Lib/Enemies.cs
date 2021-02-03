@@ -44,6 +44,7 @@ namespace FF1Lib
 			public const int Crawl = 24;
 			public const int Phantom = 51;
 			public const int Mancat = 55;
+			public const int Vampire = 60;
 			public const int Coctrice = 81;
 			public const int Sorceror = 104;
 			public const int Garland = 105;
@@ -176,15 +177,20 @@ namespace FF1Lib
 			Put(ZoneFormationsOffset, newFormations.ToArray());
 		}
 
-		public void ShuffleEnemyScripts(MT19337 rng, bool AllowUnsafePirates, bool doNormals)
+		public void ShuffleEnemyScripts(MT19337 rng, bool AllowUnsafePirates, bool doNormals, bool excludeImps, bool scaryImps)
 		{
 			var oldEnemies = Get(EnemyOffset, EnemySize * EnemyCount).Chunk(EnemySize);
 			var newEnemies = Get(EnemyOffset, EnemySize * EnemyCount).Chunk(EnemySize);
-
+			
 			if(doNormals)
 			{
 				var normalOldEnemies = oldEnemies.Take(EnemyCount - 10).ToList(); // all but WarMECH, fiends, fiends revisited, and CHAOS
+				if (!AllowUnsafePirates) normalOldEnemies.RemoveAt(Enemy.Pirate);
+				if (excludeImps) normalOldEnemies.RemoveAt(Enemy.Imp);
 				normalOldEnemies.Shuffle(rng);
+				if (excludeImps) normalOldEnemies.Insert(Enemy.Imp, oldEnemies[Enemy.Imp]);
+				if (!AllowUnsafePirates) normalOldEnemies.Insert(Enemy.Pirate, oldEnemies[Enemy.Pirate]);
+
 				for (int i = 0; i < EnemyCount - 10; i++)
 				{
 					newEnemies[i][7] = normalOldEnemies[i][7];
@@ -214,6 +220,7 @@ namespace FF1Lib
 				oldEnemies[Enemy.Tiamat2],
 				oldEnemies[Enemy.Chaos]
 			};
+			if (scaryImps) oldBigBosses.Add(oldEnemies[Enemy.Imp]);
 			oldBigBosses.Shuffle(rng);
 
 			newEnemies[Enemy.WarMech][7] = oldBigBosses[0][7];
@@ -222,16 +229,7 @@ namespace FF1Lib
 			newEnemies[Enemy.Kraken2][7] = oldBigBosses[3][7];
 			newEnemies[Enemy.Tiamat2][7] = oldBigBosses[4][7];
 			newEnemies[Enemy.Chaos][7] = oldBigBosses[5][7];
-
-			if (!AllowUnsafePirates)
-			{
-				if (newEnemies[Enemy.Pirate][7] < 0xFF)
-				{
-					int swapEnemy = newEnemies.IndexOf(newEnemies.First((enemy) => enemy[7] == 0xFF));
-					newEnemies[swapEnemy][7] = newEnemies[Enemy.Pirate][7];
-					newEnemies[Enemy.Pirate][7] = 0xFF;
-				}
-			}
+			if (scaryImps) newEnemies[Enemy.Imp][7] = oldBigBosses[6][7];
 
 			Put(EnemyOffset, newEnemies.SelectMany(enemy => enemy.ToBytes()).ToArray());
 		}
@@ -348,6 +346,7 @@ namespace FF1Lib
 						continue;
 					}
 				}
+
 				newEnemies[i][14] = oldEnemies[i][14];
 				newEnemies[i][15] = oldEnemies[i][15];
 			}
@@ -355,7 +354,7 @@ namespace FF1Lib
 			Put(EnemyOffset, newEnemies.SelectMany(enemy => enemy.ToBytes()).ToArray());
 		}
 
-		public void RandomEnemyStatusAttacks(MT19337 rng, bool AllowUnsafePirates)
+		public void RandomEnemyStatusAttacks(MT19337 rng, bool AllowUnsafePirates, bool DisableStunTouch)
 		{
 			var enemies = Get(EnemyOffset, EnemySize * EnemyCount).Chunk(EnemySize);
 
@@ -367,6 +366,8 @@ namespace FF1Lib
 				(0x20, 0x01), //Sleep Touch = Status
 				(0x40, 0x01), //Mute Touch = Status
 			};
+
+			if (DisableStunTouch) statusElements.Remove((0x10, 0x01));
 
 			(byte touch, byte element) deathElement = (0x01, 0x08); //Death Touch = Death Element
 			(byte touch, byte element) stoneElement = (0x02, 0x02); //Stone Touch = Poison

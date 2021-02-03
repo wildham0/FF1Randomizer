@@ -67,10 +67,10 @@ namespace FF1Lib
 			Put(WeaponOffset, weapons.SelectMany(weapon => weapon.ToBytes()).ToArray());
 		}
 
-		public void IncreaseWeaponBonus()
+		public void IncreaseWeaponBonus(int weaponBonusValue)
 		{
-			// Change damage bonus from +4 to +10
-			Put(0x326F5, Blob.FromHex("0A"));
+			//change the weapon bonus from +4 to +X
+			Put(0x326F5, new byte[] { (byte) weaponBonusValue });
 		}
 
 		public void FixChanceToRun()
@@ -109,11 +109,9 @@ namespace FF1Lib
 			Put(0x3AF80, Blob.FromHex("36"));
 			Put(0x3AF8F, Blob.FromHex("2AC902F026A564C900F0062061B54CACAFBD0D619D0B61BD0C619D0A612000B4A665DE00632013B64C97AE2026DB4C7CAF0000000000000000000000002000B4A92B202BB9A9008D64004C7CAF"));
 			Put(0x3AF13, Blob.FromHex("CC")); // update address for Cure4 routine
-		}
 
-		public void RebalanceSpells()
-		{
-			PutInBank(0x0C, 0xBA46, Blob.FromHex("2029B9AD856838ED7468B002A9008D85682085B860EAEAEAEAEAEAEAEAEAEAEAEAEA"));
+			// Better Slow battle message
+			Put(0x6C11F, FF1Text.TextToBytes("Attack rate down", false, FF1Text.Delimiter.Null));
 		}
 
 		public void FixEnemyStatusAttackBug()
@@ -201,8 +199,8 @@ namespace FF1Lib
 
 		public void FixHitChanceCap()
 		{
-			Put(0x2DE1D, Blob.FromHex("FF"));
-			Put(0x2DE21, Blob.FromHex("FF"));
+			Put(0x6CA9A, Blob.FromHex("FB"));
+			Put(0x6CA9E, Blob.FromHex("FA"));
 		}
 
 		public void FixEnemyPalettes()

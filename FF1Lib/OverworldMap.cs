@@ -101,6 +101,7 @@ namespace FF1Lib
 				mapLocationRequirements[MapLocation.NorthwestCastle].Add(MapChange.Bridge | MapChange.Canoe);
 				mapLocationRequirements[MapLocation.MarshCave1].Add(MapChange.Bridge | MapChange.Canoe);
 				mapLocationRequirements[MapLocation.AirshipLocation].Add(MapChange.Bridge | MapChange.Canoe);
+				
 				if ((bool)flags.MapCanalBridge)
 				{
 					mapLocationRequirements[MapLocation.DwarfCave].Add(MapChange.Bridge | MapChange.Canoe);
@@ -302,7 +303,7 @@ namespace FF1Lib
 			};
 
 			// Disable the Princess Warp back to Castle Coneria
-			if ((bool)flags.Entrances || (bool)flags.Floors) _rom.Put(0x392CA, Blob.FromHex("EAEAEA"));
+			//if ((bool)flags.Entrances || (bool)flags.Floors) _rom.PutInBank(0x11, 0x9370 + 0x0F, Blob.FromHex("EAEAEA"));
 
 			// Since we're going to move all the entrances around, we're going to change the requirements
 			// for just about everything. Most interestingly the Titan's Tunnel is going to connect totally
@@ -472,7 +473,7 @@ namespace FF1Lib
 						}
 					}
 				}
-			} while (!CheckEntranceSanity(shuffled, flags.AllowStartAreaDanager));
+			} while (!CheckEntranceSanity(shuffled, (bool)flags.AllowUnsafeStartArea));
 
 			if (flags.Spoilers || Debugger.IsAttached)
 			{
@@ -658,7 +659,7 @@ namespace FF1Lib
 			if (isSafe(OverworldTeleportIndex.MatoyasCave)) --dangerCount;
 			if (isSafe(OverworldTeleportIndex.Pravoka)) --dangerCount;
 
-			return coneria && starterLocation && titansConnections && (allowDanger || dangerCount <= 3);
+			return coneria && titansConnections && (allowDanger || (starterLocation && dangerCount <= 3));
 		}
 
 		public void Dump()

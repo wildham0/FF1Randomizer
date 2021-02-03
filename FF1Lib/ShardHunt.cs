@@ -69,16 +69,13 @@ namespace FF1Lib
 			Data[0x7EF45] = 0x11; // Skip over orbs and shards when printing the item menu
 		}
 
-		public void ShortenToFR(List<Map> maps, bool includeRefightTiles, MT19337 rng)
+		public void ShortenToFR(List<Map> maps, bool includeRefightTiles, bool refightAll, MT19337 rng)
 		{
 			// Black Orb tile Warp destination change straight to an edit Chaos floor with all the ToFR Chests.
 			Data[0x00D80] = 0x80; // Map edits
 			Data[0x02D01] = 0x0F;
 			Data[0x02D41] = 0x03;
 			Data[0x02D81] = 0x3B;
-
-			// Free, useless LUTE, for completeness sake.
-			Data[0x03021] = 0x01;
 
 			// ToFR Map Hack
 			List<Blob> landingArea = new List<Blob>
@@ -97,8 +94,15 @@ namespace FF1Lib
 			if (includeRefightTiles)
 			{
 				var battles = new List<byte> { 0x57, 0x58, 0x59, 0x5A };
-				battles.Shuffle(rng);
-				landingArea.Add(Blob.FromHex($"31{battles[0]:X2}3131{battles[1]:X2}31{battles[2]:X2}3131{battles[3]:X2}31"));
+				if (refightAll)
+				{
+					landingArea.Add(Blob.FromHex($"31{battles[3]:X2}{battles[2]:X2}{battles[1]:X2}{battles[0]:X2}31{battles[0]:X2}{battles[1]:X2}{battles[2]:X2}{battles[3]:X2}31"));
+				}
+				else
+				{
+					battles.Shuffle(rng);
+					landingArea.Add(Blob.FromHex($"31{battles[0]:X2}3131{battles[1]:X2}31{battles[2]:X2}3131{battles[3]:X2}31"));
+				}
 			}
 			maps[(int)MapId.TempleOfFiendsRevisitedChaos].Put((0x0A, 0x00), landingArea.ToArray());
 		}
@@ -108,7 +112,7 @@ namespace FF1Lib
 			"SHARD", "JEWEL", "PIECE", "CHUNK", "PRISM", "STONE", "SLICE", "WEDGE", "BIGGS", "SLIVR", "ORBLT", "ESPER", "FORCE",
 		};
 
-		public void EnableShardHunt(MT19337 rng, ShardCount count, bool npcShuffleEnabled)
+		public void EnableShardHunt(MT19337 rng, TalkRoutines talkroutines, ShardCount count)
 		{
 			int goal = 16;
 			switch (count) {
@@ -121,13 +125,6 @@ namespace FF1Lib
 				case ShardCount.Range16_24: goal = rng.Between(16, 24); break;
 				case ShardCount.Range24_32: goal = rng.Between(24, 32); break;
 				case ShardCount.Range16_36: goal = rng.Between(16, 36); break;
-			}
-
-			if (!npcShuffleEnabled)
-			{
-				// NPC Shuffle fixes OpenTreasureChest to not play the fanfare for Shards differently
-				System.Diagnostics.Debug.Assert(Data[0x7DDA0] == (byte)Item.Tent);
-				Data[0x7DDA0] = (byte)Item.Shard;
 			}
 
 			string shardName = ShardNames.PickRandom(rng);
@@ -147,7 +144,7 @@ namespace FF1Lib
 			Put(0x3B87D, Blob.FromHex($"A9{ppu & 0xFF:X2}8511A9{(ppu & 0xFF00) >> 8:X2}8512A977A00048AD0220A5128D0620A51118692085118D0620900DAD0220E612A5128D0620A5118D062068A200CC3560D002A976C0{goal:X2}D001608D0720C8E8E006D0EB1890C1"));
 
 			// Black Orb Override to check for shards rather than ORBs.
-			Put(0x39502, Blob.FromHex($"AD3560C9{goal:X2}300CA0CA209690E67DE67DA51160A51260"));
+			talkroutines.Replace(newTalkRoutines.Talk_BlackOrb, Blob.FromHex($"AD3560C9{goal:X2}300CA0CA209690E67DE67DA57160A57260"));
 			Put(0x7CDB3, Blob.FromHex("08CE"));
 
 			// A little narrative overhaul.
@@ -166,10 +163,13 @@ namespace FF1Lib
 			});
 			System.Diagnostics.Debug.Assert(intro.Length <= 208);
 			Put(0x37F20, intro);
-			Put(0x289B2, FF1Text.TextToBytes($"The {shardName}S coalesce to\nrestore the Black ORB.\n\nBrave Light Warriors....\nDestroy the Evil within!")); // Black Orb Text
-			Put(0x28CF8, FF1Text.TextToBytes($"Ah, the Light Warriors!\n\nSo you have collected\nthe {shardName}S and restored\nthe BLACK ORB."));
-			Put(0x28D57, FF1Text.TextToBytes("Thus you've travelled\n2000 years into the past\nto try to stop me?\n\nStep forward then,\nto your peril!"));
-			Put(0x28DAF, FF1Text.TextToBytes("Oh, Light Warriors!\nSuch arrogant bravery.\n\nLet us see whom history\nremembers. En Garde!"));
+
+			InsertDialogs(new Dictionary<int, string>() {
+				{ 0x21, $"The {shardName}S coalesce to\nrestore the Black ORB.\n\nBrave Light Warriors....\nDestroy the Evil within!" }, // Black Orb Text
+				{ 0x2E, $"Ah, the Light Warriors!\n\nSo you have collected\nthe {shardName}S and restored\nthe BLACK ORB." },
+				{ 0x2F, "Thus you've travelled\n2000 years into the past\nto try to stop me?\n\nStep forward then,\nto your peril!" },
+				{ 0x30, "Oh, Light Warriors!\nSuch arrogant bravery.\n\nLet us see whom history\nremembers. En Garde!" },
+			});
 		}
 
 		public Item ShardHuntTreasureSelector(Item item)

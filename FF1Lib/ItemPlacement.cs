@@ -94,6 +94,10 @@ namespace FF1Lib
 
 			var treasurePool = _allTreasures.ToList();
 
+			if ((bool)_flags.GuaranteedRuseItem)
+			{
+				unincentivizedQuestItems.Add(Item.PowerRod);
+			}
 			foreach (var incentive in incentivePool)
 			{
 				treasurePool.Remove(incentive);
@@ -139,11 +143,15 @@ namespace FF1Lib
 			{
 				placedItems = placedItems.Select(x => x.Item != Item.Canal ? x : NewItemPlacement(x, ReplacementItem)).ToList();
 			}
+			if ((bool)_flags.FreeCanoe)
+			{
+				placedItems = placedItems.Select(x => x.Item != Item.Canoe ? x : NewItemPlacement(x, ReplacementItem)).ToList();
+			}
 			if ((bool)_flags.FreeLute)
 			{
 				placedItems = placedItems.Select(x => x.Item != Item.Lute ? x : NewItemPlacement(x, ReplacementItem)).ToList();
 			}
-			if ((bool)_flags.FreeTail)
+			if ((bool)_flags.FreeTail || (bool)_flags.NoTail)
 			{
 				placedItems = placedItems.Select(x => x.Item != Item.Tail ? x : NewItemPlacement(x, ReplacementItem)).ToList();
 			}
@@ -179,6 +187,31 @@ namespace FF1Lib
 			// 8. Place all remaining unincentivized treasures or incentivized non-quest items that weren't placed
 			var itemLocationPool = _incentivesData.AllValidItemLocations.ToList();
 			itemLocationPool = itemLocationPool.Where(x => !x.IsUnused && !placedItems.Any(y => y.Address == x.Address)).ToList();
+
+			if ((bool)_flags.NoMasamune)
+			{
+				// Remove Masamune chest from shuffle
+				treasurePool.Remove(Item.Masamune);
+				treasurePool.Add(Item.Cabin);
+			}
+			else if((bool)_flags.GuaranteedMasamune)
+			{
+				// Remove Masamune chest from shuffle, Remove Cabin from item pool
+				itemLocationPool = itemLocationPool.Where(x => !x.Equals(ItemLocations.ToFRMasmune)).ToList();
+				treasurePool.Remove(Item.Cabin);
+
+				// Send Masamune Home is ignored when Masamune is incentivized
+				if (!incentivePool.Contains(Item.Masamune))
+				{
+					if ((bool)_flags.SendMasamuneHome)
+					{
+						// Remove Masamune from treasure pool (This will also causes Masamune to not be placed by RandomLoot)
+						treasurePool.Remove(Item.Masamune);
+						treasurePool.Add(Item.Cabin);
+					}
+				}
+			}
+
 			foreach (var placedItem in placedItems)
 			{
 				incentivePool.Remove(placedItem.Item);
@@ -329,6 +362,10 @@ namespace FF1Lib
 			{
 				currentMapChanges |= MapChange.Canal;
 			}
+			if (victoryConditions.FreeCanoe ?? false)
+			{
+				currentMapChanges |= MapChange.Canoe;
+			}
 
 			IEnumerable<MapLocation> currentMapLocations()
 			{
@@ -346,14 +383,6 @@ namespace FF1Lib
 
 			var requiredAccess = AccessRequirement.All;
 			var requiredMapChanges = new List<MapChange> { MapChange.All };
-
-			if (victoryConditions.OnlyRequireGameIsBeatable)
-			{
-				var winTheGameAccess = ItemLocations.ChaosReward.AccessRequirement;
-				var winTheGameLocation = ItemLocations.ChaosReward.MapLocation;
-				requiredAccess = winTheGameAccess;
-				requiredMapChanges = fullLocationRequirements[winTheGameLocation].Item1;
-			}
 
 			var accessibleLocationCount = 0;
 			while (!currentAccess.HasFlag(requiredAccess) ||
@@ -644,6 +673,11 @@ namespace FF1Lib
 					List<Item> nextPlacements = new List<Item> { Item.Ship, Item.Canal };
 					List<Item> lastPlacements = new List<Item> { Item.Floater, Item.Lute, Item.Crown, Item.Crystal, Item.Herb, Item.Tnt, Item.Adamant,
 						Item.Slab, Item.Ruby, Item.Rod, Item.Chime, Item.Tail, Item.Cube, Item.Bottle, Item.Oxyale };
+
+					if ((bool)_flags.EarlierRuby) {
+						nextPlacements.Add(Item.Ruby);
+						lastPlacements.Remove(Item.Ruby);
+					}
 
 					nextPlacements.Shuffle(rng);
 					lastPlacements.Shuffle(rng);

@@ -142,9 +142,17 @@ namespace FF1Lib
 
 		// Story pages. The first set is before the credits.
 		// The second set is the ending cinematic with counters.
-		// Intentionally left blank in case we want to use it again.
 		private static readonly List<string[]> BridgeStory = new List<string[]>
 		{
+			new []
+			{
+				"",
+				"",
+				" Final  Fantasy",
+				"",
+				"",
+				"   Randomizer",
+			},
 		};
 
 		private static readonly List<string[]> ThankYous = new List<string[]>
@@ -322,15 +330,6 @@ namespace FF1Lib
 				new []
 				{
 					"",
-					"",
-					" Final  Fantasy",
-					"",
-					"",
-					"   Randomizer",
-				},
-				new []
-				{
-					"",
 					"Lead Development",
 					"",
 					" Entroper",
@@ -338,6 +337,7 @@ namespace FF1Lib
 					" nitz",
 					" Septimus",
 					" tartopan",
+					" wildham",
 				},
 				new []
 				{
@@ -371,7 +371,7 @@ namespace FF1Lib
 			Data[0x37873] = (byte)pages.Count;
 
 			Blob credits = PackageTextBlob(pages, 0xBB00);
-			System.Diagnostics.Debug.Assert(credits.Length <= 0x0100, "Credits too large: " + credits.Length);
+			System.Diagnostics.Debug.Assert(credits.Length <= 0x0200, "Credits too large: " + credits.Length);
 			Put(0x37B00, credits);
 		}
 

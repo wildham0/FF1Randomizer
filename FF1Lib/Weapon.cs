@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Linq;
 using RomUtilities;
 using FF1Lib;
 
@@ -94,34 +95,37 @@ namespace FF1Lib
 		//6 - weapon type sprite
 		//7 - weapon sprite palette color
 
-		public void RandomWeaponBonus(MT19337 rng)
+		public void RandomWeaponBonus(MT19337 rng, int min, int max, bool excludeMasa)
 		{
 			//get base stats
 			Weapon currentWeapon;
 			for (int i = 0; i < WeaponCount; i++)
 			{
-				currentWeapon = new Weapon(i, this);
-				//number from -5 to +5
-				int bonus = rng.Between(-5, 5);
-				if (bonus != 0)
+				if (i != 39 || !excludeMasa)
 				{
-					//adjust stats
-					//clamp to 1 dmg min, 0 hit min
-					currentWeapon.HitBonus = (byte)Math.Max(0, (int)(currentWeapon.HitBonus + (3 * bonus)));
-					currentWeapon.Damage = (byte)Math.Max(1, (int)currentWeapon.Damage + (2 * bonus));
-					currentWeapon.Crit = (byte)Math.Max(1, (int)currentWeapon.Crit + bonus);
-
-					//change last two non icon characters to -/+bonus
-					string bonusString = bonus.ToString();
-					byte[] bonusBytes = FF1Text.TextToBytes(bonusString);
-
-					int iconIndex = currentWeapon.NameBytes[6] > 200 && currentWeapon.NameBytes[6] != 255 ? 5 : 6;
-					for (int j = 0; j < bonusBytes.Length - 1; j++)
+					currentWeapon = new Weapon(i, this);
+					int bonus = rng.Between(min, max);
+					if (bonus != 0)
 					{
-						currentWeapon.NameBytes[iconIndex - j] = bonusBytes[bonusBytes.Length - 2 - j];
-					}
+						//adjust stats
+						//clamp to 1 dmg min, 0 hit min, 50 hit maximum
+						currentWeapon.HitBonus = (byte)Math.Max(0, (int)(currentWeapon.HitBonus + (3 * bonus)));
+						currentWeapon.HitBonus = (byte)Math.Min(50, (int)(currentWeapon.HitBonus));
+						currentWeapon.Damage = (byte)Math.Max(1, (int)currentWeapon.Damage + (2 * bonus));
+						currentWeapon.Crit = (byte)Math.Max(1, (int)currentWeapon.Crit + (3 * bonus));
 
-					currentWeapon.writeWeaponMemory(this);
+						//change last two non icon characters to -/+bonus
+						string bonusString = string.Format((bonus > 0) ? "+{0}" : "{0}", bonus.ToString());
+						byte[] bonusBytes = FF1Text.TextToBytes(bonusString);
+
+						int iconIndex = currentWeapon.NameBytes[6] > 200 && currentWeapon.NameBytes[6] != 255 ? 5 : 6;
+						for (int j = 0; j < bonusBytes.Length - 1; j++)
+						{
+							currentWeapon.NameBytes[iconIndex - j] = bonusBytes[bonusBytes.Length - 2 - j];
+						}
+
+						currentWeapon.writeWeaponMemory(this);
+					}
 				}
 			}
 		}
@@ -132,6 +136,65 @@ namespace FF1Lib
 			Weapon flameChucks = new Weapon(0, FF1Text.TextToBytes("Flame"), WeaponIcon.CHUCK, 20, 26, 10, 0, (byte)Element.FIRE, 0, WeaponSprite.CHUCK, 0x25);
 			flameChucks.setClassUsability((ushort)(EquipPermission.BlackBelt | EquipPermission.Master | EquipPermission.Ninja));
 			flameChucks.writeWeaponMemory(this);
+		}
+
+		public void MagisizeWeapons(MT19337 rng, bool balanced)
+		{
+			var Spells = GetSpells();
+
+			if (!balanced)
+			{
+				Spells.RemoveAll(spell => spell.Data[4] == 0);
+				foreach (Item weapon in ItemLists.AllWeapons.Except(ItemLists.AllMagicItem).ToList())
+					WriteItemSpellData(Spells.SpliceRandom(rng), weapon);
+			}
+			else
+			{ 
+				var tieredSpells = new List<List<MagicSpell>> { Spells.GetRange(0, 16), Spells.GetRange(16, 16), Spells.GetRange(32, 16), Spells.GetRange(48, 16) };
+
+				var commonOdds = new List<int> { 0, 0, 0, 0, 1, 1, 1, 1, 2, 2 };
+				var rareOdds = new List<int> { 0, 1, 1, 1, 2, 2, 2, 3, 3, 3 };
+				var legendaryOdds = new List<int> { 1, 2, 2, 2, 3, 3, 3, 3, 3, 3 };
+
+				for (int i = 0; i < 4; i++)
+					tieredSpells[i].RemoveAll(spell => spell.Data[4] == 0);
+
+				foreach (Item weapon in ItemLists.CommonWeaponTier)
+				{
+					var selectedTier = commonOdds.PickRandom(rng);
+					while (tieredSpells[selectedTier].Count == 0)
+						selectedTier = commonOdds.PickRandom(rng);
+
+					WriteItemSpellData(tieredSpells[selectedTier].SpliceRandom(rng), weapon);
+				}
+
+				foreach (Item weapon in ItemLists.RareWeaponTier.Except(ItemLists.AllMagicItem).ToList())
+				{
+					var selectedTier = rareOdds.PickRandom(rng);
+					while (tieredSpells[selectedTier].Count == 0)
+						selectedTier = rareOdds.PickRandom(rng);
+
+					WriteItemSpellData(tieredSpells[selectedTier].SpliceRandom(rng), weapon);
+				}
+
+				foreach (Item weapon in ItemLists.LegendaryWeaponTier)
+				{
+					var selectedTier = legendaryOdds.PickRandom(rng);
+					while (tieredSpells[selectedTier].Count == 0)
+						selectedTier = legendaryOdds.PickRandom(rng);
+
+					WriteItemSpellData(tieredSpells[selectedTier].SpliceRandom(rng), weapon);
+				}
+
+				foreach (Item weapon in ItemLists.UberTier)
+				{
+					var selectedTier = Rng.Between(rng, 0, 3);
+					while (tieredSpells[selectedTier].Count == 0)
+						selectedTier = Rng.Between(rng, 0, 3);
+
+					WriteItemSpellData(tieredSpells[selectedTier].SpliceRandom(rng), weapon);
+				}
+			}
 		}
 	}
 
@@ -273,4 +336,5 @@ namespace FF1Lib
 			return matchedType;
 		}
 	}
+
 }

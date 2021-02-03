@@ -23,6 +23,7 @@ namespace FF1Lib
 		private static readonly string[] TextByBytes;
 		private static readonly Dictionary<string, byte> BytesByText = new Dictionary<string, byte>
 		{
+			{ "#", 0x03 },
 			{ "\n", 0x05 },
 			{ "e ", 0x1A },
 			{ " t", 0x1B },
@@ -104,6 +105,7 @@ namespace FF1Lib
 			{ " d", 0x67 },
 			{ "li", 0x68 },
 			{ "..", 0x69 },
+			{ "/", 0x7A },
 			{ "0", 0x80 },
 			{ "1", 0x81 },
 			{ "2", 0x82 },
@@ -169,7 +171,7 @@ namespace FF1Lib
 			{ "'", 0xBE },
 			{ ",", 0xBF },
 			{ ".", 0xC0 },
-			{ " ", 0xC1 },
+			{ "+", 0xC1 },
 			{ "-", 0xC2 },
 			// this is a duplicate { "..", 0xC3 },
 			{ "!", 0xC4 },
@@ -188,7 +190,7 @@ namespace FF1Lib
 			{ "@T", 0xDF },
 			{ "%", 0xE0 },
 			{ "@p", 0xE1 },
-			{ ";", 0xFF }
+			{ " ", 0xFF }
 		};
 
 		static FF1Text()
@@ -221,6 +223,49 @@ namespace FF1Lib
 			{
 				var twoChars = text.Substring(i, 2);
 				if (BytesByText.ContainsKey(twoChars) && (useDTE || twoChars[0] == '@'))
+				{
+					bytes[j++] = BytesByText[twoChars];
+					i += 2;
+				}
+				else
+				{
+					bytes[j++] = BytesByText[text[i++].ToString()];
+				}
+			}
+
+			if (i < text.Length)
+			{
+				bytes[j++] = BytesByText[text[i++].ToString()];
+			}
+
+			if (delimiter != Delimiter.Empty)
+			{
+				bytes[j++] = (byte)delimiter;
+			}
+
+			return bytes.SubBlob(0, j);
+		}
+
+		public static Blob TextToBytesInfo(string text, bool useDTE = true, Delimiter delimiter = Delimiter.Null)
+		{
+			Blob bytes = new byte[text.Length + 1];
+			int i = 0, j = 0;
+			while (i < text.Length - 1)
+			{
+				var twoChars = text.Substring(i, 2);
+				if (twoChars[0] == '¤') // Control Code 0x14 for second words table
+				{
+					bytes[j++] = 0x14;
+					bytes[j++] = Blob.FromHex(text.Substring(i+1,2))[0];
+					i += 3;
+				}
+				else if (twoChars[0] == '$') // Control code 0x02 for itemnames table
+				{
+					bytes[j++] = 0x02;
+					bytes[j++] = Blob.FromHex(text.Substring(i + 1, 2))[0];
+					i += 3;
+				}
+				else if (BytesByText.ContainsKey(twoChars) && (useDTE || twoChars[0] == '@'))
 				{
 					bytes[j++] = BytesByText[twoChars];
 					i += 2;

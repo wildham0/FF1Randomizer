@@ -101,14 +101,16 @@ namespace FF1Lib
 	}
 	public class MapObject : RewardSourceBase
 	{
-		private const int _mapObjectTalkDataAddress = 0x395D5;
-		private const int _mapObjectTalkDataSize = 4;
+		//private const int _mapObjectTalkDataAddress = 0x395D5;
+		private const int _mapObjectTalkDataAddress = 0x47A00;
+		private const int _mapObjectTalkDataSize = 6;
 		private const int _giftItemIndex = 3;
 
-		private const int _mapObjTalkJumpTblAddress = 0x390D3;
+		private const int _mapObjTalkJumpTblAddress = 0x450D3;
 		private const int _mapObjTalkJumpTblDataSize = 2;
-		private readonly Blob _eventFlagRoutineAddress = Blob.FromHex("6B95");
-		private readonly Blob _itemTradeRoutineAddress = Blob.FromHex("5693");
+		private readonly Blob _eventFlagRoutineAddress = Blob.FromHex("0393");
+		private readonly Blob _itemTradeRoutineAddress = Blob.FromHex("7893");
+		private readonly Blob _itemCheckRoutineAddress = Blob.FromHex("A193");
 
 		private readonly int _objectRoutineAddress;
 		private readonly ObjectId _requiredGameEventFlag;
@@ -122,7 +124,7 @@ namespace FF1Lib
 						 ObjectId requiredGameEventFlag = ObjectId.None,
 						 Item requiredItemTrade = Item.None,
 						 MapLocation requiredSecondLocation = MapLocation.StartingLocation,
-						bool useVanillaRoutineAddress = false)
+						bool useVanillaRoutineAddress = true)
 			: base(_mapObjectTalkDataAddress + _giftItemIndex +
 				   _mapObjectTalkDataSize * (byte)objectId,
 				   Enum.GetName(typeof(ObjectId), objectId),
