@@ -1,14 +1,43 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.ComponentModel;
 using RomUtilities;
 
 namespace FF1Lib
 {
+	public enum IncentivePlacementType
+	{
+		[Description("Vanilla")]
+		Vanilla,
+		[Description("Random")]
+		RandomAtLocation
+	}
+
+	public enum IncentivePlacementTypeGated
+	{
+		[Description("Vanilla")]
+		Vanilla,
+		[Description("Random")]
+		RandomAtLocation,
+		[Description("Before Gating")]
+		RandomNoGating,
+		[Description("Behind Gating")]
+		RandomBehindGating
+	}
+
 	public class IncentiveData
 	{
-		public IncentiveData(MT19337 rng, IIncentiveFlags flags, OverworldMap map, ItemShopSlot shopSlot)
+
+		public OverworldMap OverworldMap { get; private set; }
+
+		ISanityChecker _checker;
+
+		public IncentiveData(MT19337 rng, IIncentiveFlags flags, OverworldMap map, ItemShopSlot shopSlot, ISanityChecker checker)
 		{
+			OverworldMap = map;
+			_checker = checker;
+
 			Dictionary<MapLocation, Tuple<List<MapChange>, AccessRequirement>> fullLocationRequirements = map.FullLocationRequirements;
 			var forcedItemPlacements = ItemLocations.AllOtherItemLocations.ToList();
 			if (!(flags.NPCItems ?? false))
@@ -16,7 +45,18 @@ namespace FF1Lib
 				forcedItemPlacements.AddRange(ItemLocations.AllNPCFreeItemLocationsExcludingVendor);
 				forcedItemPlacements.Add(shopSlot);
 			}
-			if (!(flags.NPCFetchItems ?? false)) forcedItemPlacements.AddRange(ItemLocations.AllNPCFetchItemLocations);
+			if (!(flags.NPCFetchItems ?? false))
+			{
+				forcedItemPlacements.AddRange(ItemLocations.AllNPCFetchItemLocations);
+				if((bool)flags.NoXcalber)
+				{
+					forcedItemPlacements.Remove(ItemLocations.Smith);
+				}
+			}
+			else if (flags.NoOverworld)
+			{
+				forcedItemPlacements.Add(ItemLocations.Nerrick);
+			}
 			if ((!flags.Treasures ?? false)) forcedItemPlacements.AddRange(ItemLocations.AllTreasures);
 			var incentivePool = new List<Item>();
 			if (flags.IncentivizeBridge)
@@ -215,37 +255,43 @@ namespace FF1Lib
 			}
 			if (flags.IncentivizeVolcano ?? false)
 			{
-				if((bool)flags.IncentivizeRandomChestInLocation) {
+				if(flags.VolcanoIncentivePlacementType == IncentivePlacementType.RandomAtLocation) {
 					incentiveLocationPool.Add(ItemLocations.Volcano.ToList().SpliceRandom(rng));
 				} else {
 					incentiveLocationPool.Add(ItemLocations.VolcanoMajor);
-				}				
+				}
 			}
 			if (flags.IncentivizeEarth ?? false)
 			{
-				if ((bool)flags.IncentivizeRandomChestInLocation)
+				if (flags.EarthIncentivePlacementType == IncentivePlacementTypeGated.RandomAtLocation)
 				{
 					incentiveLocationPool.Add(ItemLocations.EarthCave.ToList().SpliceRandom(rng));
 				}
-				else
+				else if (flags.EarthIncentivePlacementType == IncentivePlacementTypeGated.RandomBehindGating)
 				{
+					incentiveLocationPool.Add(ItemLocations.EarthCaveFloor4.ToList().SpliceRandom(rng));
+				}
+				else if(flags.EarthIncentivePlacementType == IncentivePlacementTypeGated.RandomNoGating)
+				{
+					incentiveLocationPool.Add(ItemLocations.EarthCavePreRod.ToList().SpliceRandom(rng));
+				} else {
 					incentiveLocationPool.Add(ItemLocations.EarthCaveMajor);
-				}				
+				}
 			}
 			if (flags.IncentivizeMarsh ?? false)
 			{
-				if ((bool)flags.IncentivizeRandomChestInLocation)
+				if (flags.MarshIncentivePlacementType == IncentivePlacementType.RandomAtLocation)
 				{
 					incentiveLocationPool.Add(ItemLocations.MarshCaveUnlocked.ToList().SpliceRandom(rng));
 				}
 				else
 				{
 					incentiveLocationPool.Add(ItemLocations.MarshCaveMajor);
-				}				
+				}
 			}
 			if (flags.IncentivizeMarshKeyLocked ?? false)
 			{
-				if ((bool)flags.IncentivizeRandomChestInLocation)
+				if (flags.MarshLockedIncentivePlacementType == IncentivePlacementType.RandomAtLocation)
 				{
 					incentiveLocationPool.Add(ItemLocations.MarshCaveLocked.ToList().SpliceRandom(rng));
 				}
@@ -256,61 +302,68 @@ namespace FF1Lib
 			}
 			if (flags.IncentivizeSkyPalace ?? false)
 			{
-				if ((bool)flags.IncentivizeRandomChestInLocation)
+				if (flags.SkyPalaceIncentivePlacementType == IncentivePlacementTypeGated.RandomAtLocation)
 				{
-					if ((bool)flags.IncentivizeRandomChestIncludeExtra)
-					{
-						incentiveLocationPool.Add(ItemLocations.SkyPalace.Concat(ItemLocations.MirageTower).ToList().SpliceRandom(rng));
-					} else {
-						incentiveLocationPool.Add(ItemLocations.SkyPalace.ToList().SpliceRandom(rng));
-					}
+					incentiveLocationPool.Add(ItemLocations.SkyPalace.Concat(ItemLocations.MirageTower).ToList().SpliceRandom(rng));
+				}
+				else if (flags.SkyPalaceIncentivePlacementType == IncentivePlacementTypeGated.RandomBehindGating)
+				{
+					incentiveLocationPool.Add(ItemLocations.SkyPalace.ToList().SpliceRandom(rng));
+				}
+				else if (flags.SkyPalaceIncentivePlacementType == IncentivePlacementTypeGated.RandomNoGating)
+				{
+					incentiveLocationPool.Add(ItemLocations.MirageTower.ToList().SpliceRandom(rng));
 				}
 				else
 				{
 					incentiveLocationPool.Add(ItemLocations.SkyPalaceMajor);
-				}				
+				}
 			}
 			if (flags.IncentivizeSeaShrine ?? false)
 			{
-				if ((bool)flags.IncentivizeRandomChestInLocation)
+				if (flags.SeaShrineIncentivePlacementType == IncentivePlacementTypeGated.RandomAtLocation)
 				{
-					if((bool)flags.IncentivizeRandomChestIncludeExtra)
-					{
-						incentiveLocationPool.Add(ItemLocations.SeaShrine.ToList().SpliceRandom(rng));
-					} else {
-						incentiveLocationPool.Add(ItemLocations.SeaShrineUnlocked.ToList().SpliceRandom(rng));
-					}
+					incentiveLocationPool.Add(ItemLocations.SeaShrine.ToList().SpliceRandom(rng));
+				}
+				else if (flags.SeaShrineIncentivePlacementType == IncentivePlacementTypeGated.RandomBehindGating)
+				{
+					incentiveLocationPool.Add(ItemLocations.SeaShrineLocked);
+				}
+				else if (flags.SeaShrineIncentivePlacementType == IncentivePlacementTypeGated.RandomNoGating)
+				{
+					incentiveLocationPool.Add(ItemLocations.SeaShrineUnlocked.ToList().SpliceRandom(rng));
 				}
 				else
 				{
 					incentiveLocationPool.Add(ItemLocations.SeaShrineMajor);
-				}				
+				}
 			}
 			if (flags.IncentivizeConeria ?? false)
 			{
-				if ((bool)flags.IncentivizeRandomChestInLocation)
+				if (flags.CorneriaIncentivePlacementType == IncentivePlacementType.RandomAtLocation)
 				{
 					incentiveLocationPool.Add(ItemLocations.Coneria.ToList().SpliceRandom(rng));
 				}
 				else
 				{
 					incentiveLocationPool.Add(ItemLocations.ConeriaMajor);
-				}				
+				}
 			}
 			if (flags.IncentivizeIceCave ?? false)
 			{
-				if ((bool)flags.IncentivizeRandomChestInLocation)
+				if (flags.IceCaveIncentivePlacementType == IncentivePlacementType.RandomAtLocation)
 				{
 					incentiveLocationPool.Add(ItemLocations.IceCave.ToList().SpliceRandom(rng));
 				}
 				else
 				{
 					incentiveLocationPool.Add(ItemLocations.IceCaveMajor);
-				}				
+				}
 			}
+
 			if (flags.IncentivizeOrdeals ?? false)
 			{
-				if ((bool)flags.IncentivizeRandomChestInLocation)
+				if (flags.OrdealsIncentivePlacementType == IncentivePlacementType.RandomAtLocation)
 				{
 					incentiveLocationPool.Add(ItemLocations.Ordeals.ToList().SpliceRandom(rng));
 				}
@@ -325,15 +378,27 @@ namespace FF1Lib
 			}
 			if (flags.IncentivizeTitansTrove ?? false)
 			{
-				if ((bool)flags.IncentivizeRandomChestInLocation)
+				if (flags.TitansIncentivePlacementType == IncentivePlacementType.RandomAtLocation)
 				{
 					incentiveLocationPool.Add(ItemLocations.TitansTunnel.ToList().SpliceRandom(rng));
 				}
 				else
 				{
 					incentiveLocationPool.Add(ItemLocations.TitansTunnel1);
-				}				
+				}
 			}
+			if (flags.IncentivizeCardia ?? false)
+			{
+				if (flags.CardiaIncentivePlacementType == IncentivePlacementType.RandomAtLocation)
+				{
+					incentiveLocationPool.Add(ItemLocations.Cardia.ToList().SpliceRandom(rng));
+				}
+				else
+				{
+					incentiveLocationPool.Add(ItemLocations.Cardia4);
+				}
+			}
+
 			var itemLocationPool =
 				ItemLocations.AllTreasures.Concat(ItemLocations.AllNPCItemLocations)
 						  .Where(x => !x.IsUnused && !forcedItemPlacements.Any(y => y.Address == x.Address))
@@ -464,7 +529,7 @@ namespace FF1Lib
 
 			if (flags.NPCFetchItems ?? false)
 			{
-				var validKeyMapLocations = ItemPlacement.AccessibleMapLocations(~(AccessRequirement.BlackOrb | AccessRequirement.Key), MapChange.All, fullLocationRequirements);
+				var validKeyMapLocations = _checker.AccessibleMapLocations(~(AccessRequirement.BlackOrb | AccessRequirement.Key), MapChange.All, fullLocationRequirements);
 				validKeyLocations = itemLocationPool.Where(x => validKeyMapLocations.Contains(x.MapLocation) &&
 					validKeyMapLocations.Contains((x as MapObject)?.SecondLocation ?? MapLocation.StartingLocation)).ToList();
 				var keyPlacementRank = rng.Between(1, incentivePool.Count);
@@ -482,9 +547,9 @@ namespace FF1Lib
 			{
 				var everythingButCanoe = ~MapChange.Canoe;
 				var startingPotentialAccess = map.StartingPotentialAccess;
-				var startingMapLocations = ItemPlacement.AccessibleMapLocations(startingPotentialAccess, MapChange.None, fullLocationRequirements);
-				var validShipMapLocations = ItemPlacement.AccessibleMapLocations(startingPotentialAccess | AccessRequirement.Crystal, MapChange.Bridge, fullLocationRequirements);
-				var validCanoeMapLocations = ItemPlacement.AccessibleMapLocations(everythingButOrbs, everythingButCanoe, fullLocationRequirements);
+				var startingMapLocations = _checker.AccessibleMapLocations(startingPotentialAccess, MapChange.None, fullLocationRequirements);
+				var validShipMapLocations = _checker.AccessibleMapLocations(startingPotentialAccess | AccessRequirement.Crystal, MapChange.Bridge, fullLocationRequirements);
+				var validCanoeMapLocations = _checker.AccessibleMapLocations(everythingButOrbs, everythingButCanoe, fullLocationRequirements);
 
 				validBridgeLocations =
 					itemLocationPool.Where(x => startingMapLocations.Contains(x.MapLocation) &&
@@ -509,7 +574,7 @@ namespace FF1Lib
 				}
 			}
 
-			var nonEndgameMapLocations = ItemPlacement.AccessibleMapLocations(~AccessRequirement.BlackOrb, MapChange.All, fullLocationRequirements);
+			var nonEndgameMapLocations = _checker.AccessibleMapLocations(~AccessRequirement.BlackOrb, MapChange.All, fullLocationRequirements);
 
 			ForcedItemPlacements = forcedItemPlacements.ToList();
 			IncentiveItems = incentivePool.ToList();

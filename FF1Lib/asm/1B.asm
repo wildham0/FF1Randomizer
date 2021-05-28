@@ -190,7 +190,126 @@ LvlUp_CheckIfMax:
     PLA
     PLA
     RTS
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;  AwardStartingEXP  [$8496]
+;;
+;;
+;; Simulates 16 BattleRewards with fixed exp
+;; Heals all characters afterwards
+;; Really bad hack with the lute
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    LDA game_flags ;AD0062 basically i set bit 7 of item_lute here, because i din't want to use up a byte of sram and i'm pretty sure it's never set again ever.
+	ORA #$80 ;0980
+	STA game_flags ;8D0062
+
+	LDA #$10 ; A910
+	STA eob_gp_reward ;8D7668 just a loop counter, eob_gp_reward isn't used here anyway
+
+
+	LDA #$FF ;A9FF this sets the low and high bytes of the eob_exp_reward. the FFs will be replaced depending on what level you should receive.
+	STA eob_exp_reward	;8D7868
+	LDA #$FF ;A9FF
+	STA eob_exp_reward + 1 ;8D7968
+
+loop:		
+	LDA #$00 ;A900
+    JSR LvlUp_AwardAndUpdateExp ;20DA87 this basically awards the exp and does the levelup.
+    LDA #$01 ;A901
+    JSR LvlUp_AwardAndUpdateExp ;20DA87
+    LDA #$02 ;A902
+    JSR LvlUp_AwardAndUpdateExp ;20DA87
+    LDA #$03 ;A903
+    JSR LvlUp_AwardAndUpdateExp ;20DA87
+	
+	DEC eob_gp_reward ;CE7668 loop stuff
+	BNE loop ;D0E7
+	
+	LDA game_flags ;AD0062 clear bit 7 of the item_lute, it shall never be set of the rest of the game, i hope.
+	AND #$7F ;297F
+	STA game_flags ;8D0062
+	
+	LDX #$00 ;A200 heal all characters, crappy code i know
+	LDA ch_maxhp, X; BD0C619D0A61BD0D619D0B61
+    STA ch_curhp, X
+    LDA ch_maxhp+1, X
+    STA ch_curhp+1, X	
+	
+	LDX #$40	;A240
+	LDA ch_maxhp, X; BD0C619D0A61BD0D619D0B61
+    STA ch_curhp, X
+    LDA ch_maxhp+1, X
+    STA ch_curhp+1, X	
+	
+	LDX #$80	;A280
+	LDA ch_maxhp, X; BD0C619D0A61BD0D619D0B61
+    STA ch_curhp, X
+    LDA ch_maxhp+1, X
+    STA ch_curhp+1, X	
+	
+	LDX #$C0	;A2C0
+	LDA ch_maxhp, X; BD0C619D0A61BD0D619D0B61
+    STA ch_curhp, X
+    LDA ch_maxhp+1, X
+    STA ch_curhp+1, X
     
+	RTS ;60
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;  LvlUp_DisplaySwitcher  [$8496]
+;;
+;;
+;; Routine to en/disable LvlUp_Display. If the bit 7 of item_lute is set, we are at gamestart and don't want LvlUp_Display to be called, because it crashes the game.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	LDA game_flags ;AD0062 
+	AND #$80 ;2980
+	BNE exit ;D003
+	JSR LvlUp_Display ;20E389
+exit:
+	RTS ;60
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;  Copy_StartingEquipment  [$8520]
+;;
+;;
+;; StartingEquipment Table 32 bytes
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;;  Copy_StartingEquipment  [$8540]
+;;
+;;
+;; Copies the Starting Equipment into sram
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+Copy_StartingEquipment: ;0x8540
+    LDX #$00			; A200
+    LDY #$00			; A000
+    JSR copy_8			; 205785
+    LDY #$40			; A040
+    JSR copy_8			; 205785
+    LDY #$80			; A080
+    JSR copy_8			; 205785
+    LDY #$C0			; A0C0
+    JSR copy_8			; 205785
+    RTS					; 60
+
+
+copy_8:				    ; 0x8557
+    LDA source, X		; BD2085
+    STA ch_weapons, Y	; 991861
+    INX					; E8
+    INY					; C8
+    TYA					; 98
+    AND #$0F			; 290F
+    CMP #$08			; C908
+    BNE copy_8			; D0F3
+    RTS					; 60
 
 .advance $874A
 ; extra room for future level up changes
@@ -389,7 +508,7 @@ LJumpBack:           jsr LvLUp_CompareExp
 					 bcc LincludeDisplay
 					 jsr LvlUp_LevelUp
 					 jmp LJumpBack ; replace with NOPs for no multi levelup
-LincludeDisplay:     jsr LvlUp_Display
+LincludeDisplay:     jsr LvlUp_DisplaySwitcher ; we musn't call LvlUp_Display during gamestart, so we jsr to a subroutine that handles the check
 L9bf2:               rts
 
 

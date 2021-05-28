@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -306,6 +307,22 @@ namespace FF1Lib
 		{
 			byte tempTarget = (byte)target;
 			return GetRandomElement(rng, tempTarget);
+		}
+
+		public bool FindFirst(byte tile, out int x, out int y)
+		{
+			for (y = 0; y < RowCount; y++)
+			{
+				for (x = 0; x < RowLength; x++)
+				{
+					if (_map[y, x] == tile) return true;
+				}
+			}
+
+			x = 0;
+			y = 0;
+
+			return false;
 		}
 
 		/// <summary>

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using RomUtilities;
 
@@ -32,6 +33,7 @@ namespace FF1Lib
 			MelmondRegion = 3,
 			SardaRegion = 4,
 			BahamutRegion = 5,
+			LefeinRegion = 6    // when MapGaiaMountainPass
 		}
 
 		private enum CanoeableRegion
@@ -91,6 +93,24 @@ namespace FF1Lib
 				MapEditsToApply.Add(AirshipDock);
 				mapLocationRequirements[MapLocation.AirshipLocation].Add(MapChange.Ship | MapChange.Canal);
 			}
+			if ((bool)flags.MapBahamutCardiaDock)
+			{
+				MapEditsToApply.Add(BahamutCardiaDock);
+				mapLocationRequirements[MapLocation.BahamutCave1].Add(MapChange.Ship | MapChange.Canal);
+				mapLocationRequirements[MapLocation.Cardia1].Add(MapChange.Ship | MapChange.Canal);
+			}
+			if ((bool)flags.MapLefeinRiver) {
+			    MapEditsToApply.Add(LefeinRiverDock);
+			    mapLocationRequirements[MapLocation.Lefein].Add(MapChange.Ship | MapChange.Canal | MapChange.Canoe);
+		        }
+			if ((bool)flags.MapGaiaMountainPass) {
+			    MapEditsToApply.Add(GaiaMountainPass);
+			    if ((bool)flags.MapLefeinRiver) {
+				// If Lefein river dock is on, then Gaia also becomes ship-accessible
+			        mapLocationRequirements[MapLocation.Gaia].Add(MapChange.Ship | MapChange.Canal | MapChange.Canoe);
+			    }
+			    _walkableNodes[WalkableRegion.LefeinRegion] = new List<OverworldTeleportIndex>{OverworldTeleportIndex.Gaia, OverworldTeleportIndex.Lefein };
+			}
 			if ((bool)flags.MapVolcanoIceRiver)
 			{
 				MapEditsToApply.Add(VolcanoIceRiver);
@@ -101,7 +121,7 @@ namespace FF1Lib
 				mapLocationRequirements[MapLocation.NorthwestCastle].Add(MapChange.Bridge | MapChange.Canoe);
 				mapLocationRequirements[MapLocation.MarshCave1].Add(MapChange.Bridge | MapChange.Canoe);
 				mapLocationRequirements[MapLocation.AirshipLocation].Add(MapChange.Bridge | MapChange.Canoe);
-				
+
 				if ((bool)flags.MapCanalBridge)
 				{
 					mapLocationRequirements[MapLocation.DwarfCave].Add(MapChange.Bridge | MapChange.Canoe);
@@ -177,9 +197,9 @@ namespace FF1Lib
 
 		const int teleportTilesetOffset = 0x2CC0;
 
-		const int teleportXOffset = 0x2D00;
-		const int teleportYOffset = 0x2D40;
-		const int teleportMapIndexOffset = 0x2D80;
+		const int teleportXOffset = 0x3F000;
+		const int teleportYOffset = 0x3F100;
+		const int teleportMapIndexOffset = 0x3F200;
 
 		public static Dictionary<Palette, Blob> GeneratePalettes(List<Blob> vanillaPalettes)
 		{
@@ -324,7 +344,9 @@ namespace FF1Lib
 			var placedExits = new Dictionary<ExitTeleportIndex, Coordinate>();
 			if ((bool)flags.Towns)
 			{
-				// Conspicuously missing is Coneria; we do not shuffle it .... yet.
+				if ((bool)flags.IncludeConeria)
+					placedMaps.Remove(OverworldTeleportIndex.Coneria);
+
 				placedMaps.Remove(OverworldTeleportIndex.Pravoka);
 				placedMaps.Remove(OverworldTeleportIndex.Elfland);
 				placedMaps.Remove(OverworldTeleportIndex.Melmond);
@@ -343,6 +365,22 @@ namespace FF1Lib
 				{
 					keepers.Add(OverworldTeleportIndex.Cardia1);
 					keepers.Add(OverworldTeleportIndex.Cardia5);
+				}
+
+				if ((bool)flags.IsFloaterRemoved && !(bool)flags.IsAirshipFree)
+				{
+				    if (!(bool)flags.MapBahamutCardiaDock) {
+					keepers.Add(OverworldTeleportIndex.Cardia1);
+					keepers.Add(OverworldTeleportIndex.BahamutCave1);
+				    }
+				    keepers.Add(OverworldTeleportIndex.Cardia2);
+				    keepers.Add(OverworldTeleportIndex.Cardia4);
+				    keepers.Add(OverworldTeleportIndex.Cardia5);
+				    keepers.Add(OverworldTeleportIndex.Cardia6);
+				    keepers.Add(OverworldTeleportIndex.TitansTunnelWest);
+
+				    defaultRequirements[MapLocation.SardasCave] = new LocationRequirement(new List<MapChange> { MapChange.TitanFed });
+				    defaultRequirements[MapLocation.TitansTunnelWest] = new LocationRequirement(new List<MapChange> { MapChange.TitanFed });
 				}
 
 				placedMaps = placedMaps .Where(x => keepers.Contains(x.Key)) .ToDictionary(x => x.Key, x => x.Value);
@@ -369,6 +407,13 @@ namespace FF1Lib
 			var deadEnds = new List<TeleportDestination>();
 
 			towns.Shuffle(rng);
+			// Don't allow Lefein or Melmond to be the first town since we need an item shop.
+			while (towns.Any() && (towns.First().Destination == MapLocation.Lefein || towns.First().Destination == MapLocation.Melmond))
+			{
+				towns.Add(towns.First());
+				towns.RemoveAt(0);
+			}
+
 			topfloors.Shuffle(rng);
 			subfloors.Shuffle(rng);
 
@@ -393,8 +438,18 @@ namespace FF1Lib
 
 			if ((bool)flags.DeepTownsPossible && (bool)flags.AllowDeepTowns)
 			{
+				// If we're shuffling Coneria in with the towns we keep one aside to put in the Coneria entrance.
+				// The first element of Towns has an Inn, Item Shop, and Clinic, which we ensured above.
+				List<TeleportDestination> startingTown = new List<TeleportDestination>();
+				if ((bool)flags.IncludeConeria && !(bool)flags.AllowUnsafeStartArea)
+				{
+					startingTown.Add(towns.First());
+					towns.RemoveAt(0);
+				}
+
 				subfloors.AddRange(towns);
 				towns.Clear();
+				towns.AddRange(startingTown);
 			}
 
 			// Shuffle again now that we've removed some to be placed at the end. Maybe unnecessary.
@@ -430,8 +485,20 @@ namespace FF1Lib
 				// with town entrances we just keep them at the front of shuffleEntrances too.
 				if ((bool)flags.EntrancesMixedWithTowns)
 				{
+					// If we're keeping the start area safe, move the Coneria entrance to the start
+					// of shuffleEntrances so that it always gets matched with the first, good town.
+					bool removedConeria = false;
+					if (!(bool)flags.AllowUnsafeStartArea)
+					{
+						removedConeria = shuffleTowns.Remove(OverworldTeleportIndex.Coneria);
+						Debug.Assert(removedConeria);
+					}
+
 					shuffleEntrances = shuffleTowns.Concat(shuffleEntrances).ToList();
 					shuffleEntrances.Shuffle(rng);
+
+					if (removedConeria)
+						shuffleEntrances.Insert(0, OverworldTeleportIndex.Coneria);
 				}
 				else
 				{
@@ -475,9 +542,22 @@ namespace FF1Lib
 				}
 			} while (!CheckEntranceSanity(shuffled, (bool)flags.AllowUnsafeStartArea));
 
+			// If the Coneria Entrance goes *directly* to a town, we make its index the one that
+			// gets the guaranteed PURE and SOFT.
+			switch (shuffled[OverworldTeleportIndex.Coneria].Destination)
+			{
+				case MapLocation.Pravoka: ConeriaTownEntranceItemShopIndex = 1;	break;
+				case MapLocation.Elfland: ConeriaTownEntranceItemShopIndex = 2;	break;
+				case MapLocation.CrescentLake: ConeriaTownEntranceItemShopIndex = 3; break;
+				case MapLocation.Gaia: ConeriaTownEntranceItemShopIndex = 4; break; // Gaia before Onrac!
+				case MapLocation.Onrac: ConeriaTownEntranceItemShopIndex = 5; break;
+				default: ConeriaTownEntranceItemShopIndex = 0; break;
+			}
+
 			if (flags.Spoilers || Debugger.IsAttached)
 			{
-				Console.WriteLine($"OverworldMap::ShuffleEntrancesAndFloors() required {sanity} iterations.");
+				// Only output to the console
+				Utilities.WriteSpoilerLine($"OverworldMap::ShuffleEntrancesAndFloors() required {sanity} iterations.", true);
 			}
 
 			// Pretty print map data
@@ -641,7 +721,6 @@ namespace FF1Lib
 
 		public bool CheckEntranceSanity(IEnumerable<KeyValuePair<OverworldTeleportIndex, TeleportDestination>> shuffledEntrances, bool allowDanger)
 		{
-			var coneria = shuffledEntrances.Any(x => x.Key == OverworldTeleportIndex.Coneria && x.Value.Destination == MapLocation.Coneria);
 			var starterLocation = shuffledEntrances.Any(x => StartingLocations.Contains(x.Key) && StarterDestinations.Contains(x.Value.Destination));
 			var titansConnections =
 				shuffledEntrances.Any(x => x.Value.Destination == MapLocation.TitansTunnelEast && ConnectedLocations.Contains(x.Key)) &&
@@ -652,14 +731,15 @@ namespace FF1Lib
 				return shuffledEntrances.Any(x => x.Key == owti && SafeLocations.Contains(x.Value.Destination));
 			}
 
-			int dangerCount = 5;
+			int dangerCount = 6;
+			if (isSafe(OverworldTeleportIndex.Coneria)) --dangerCount;
 			if (isSafe(OverworldTeleportIndex.ConeriaCastle1)) --dangerCount;
 			if (isSafe(OverworldTeleportIndex.TempleOfFiends1)) --dangerCount;
 			if (isSafe(OverworldTeleportIndex.DwarfCave)) --dangerCount;
 			if (isSafe(OverworldTeleportIndex.MatoyasCave)) --dangerCount;
 			if (isSafe(OverworldTeleportIndex.Pravoka)) --dangerCount;
 
-			return coneria && titansConnections && (allowDanger || (starterLocation && dangerCount <= 3));
+			return titansConnections && (allowDanger || (starterLocation && dangerCount <= 3));
 		}
 
 		public void Dump()
@@ -671,6 +751,7 @@ namespace FF1Lib
 		public Dictionary<MapLocation, OverworldTeleportIndex> OverriddenOverworldLocations;
 		public Dictionary<ObjectId, MapLocation> ObjectiveNPCs;
 		public AccessRequirement StartingPotentialAccess;
+		public int ConeriaTownEntranceItemShopIndex = 0;
 
 		public const byte GrassTile = 0x00;
 		public const byte GrassBottomRightCoast = 0x06;
@@ -678,17 +759,38 @@ namespace FF1Lib
 		public const byte RiverTile = 0x44;
 		public const byte MountainTopLeft = 0x10;
 		public const byte MountainTopMid = 0x11;
+		public const byte MountainTopRight = 0x12;
+		public const byte MountainMidLeft = 0x20;
 		public const byte MountainMid = 0x21;
+		public const byte MountainMidRight = 0x22;
 		public const byte MountainBottomLeft = 0x30;
 		public const byte MountainBottomMid = 0x31;
 		public const byte MountainBottomRight = 0x33;
+		public const byte RiverTopLeft = 0x40;
+		public const byte RiverTopRight = 0x41;
+		public const byte RiverBottomLeft = 0x50;
+		public const byte RiverBottomRight = 0x51;
+		public const byte ForestTopLeft = 0x03;
+		public const byte ForestTopMid = 0x04;
+		public const byte ForestTopRight = 0x05;
+		public const byte ForestMidLeft = 0x13;
 		public const byte ForestMid = 0x14;
+		public const byte ForestMidRight = 0x15;
+		public const byte ForestBottomLeft = 0x23;
 		public const byte ForestBottomMid = 0x24;
 		public const byte ForestBottomRight = 0x25;
-		public const byte ForestBottomLeft = 0x23;
 		public const byte DockBottomMid = 0x78;
 		public const byte DockRightMid = 0x1F;
+		public const byte CoastTopLeft = 0x06;
 		public const byte CoastLeft = 0x16;
+		public const byte Ocean = 0x17;
+		public const byte CoastRight = 0x18;
+		public const byte CoastBottomLeft = 0x26;
+	        public const byte GrassyMid = 0x54;
+	        public const byte GrassTopLeft = 0x60;
+	        public const byte GrassTopRight = 0x61;
+	        public const byte GrassBottomLeft = 0x70;
+	        public const byte GrassBottomRight = 0x71;
 
 		public static List<MapEdit> OnracDock =
 			new List<MapEdit>
@@ -764,6 +866,90 @@ namespace FF1Lib
 				new MapEdit{X = 105, Y = 171, Tile = GrassTile},
 				new MapEdit{X = 106, Y = 171, Tile = CoastLeft}
 			};
+		public static List<MapEdit> BahamutCardiaDock =
+			new List<MapEdit>
+			{
+			    new MapEdit{X = 0x5f, Y = 0x33, Tile = ForestBottomRight},
+			    new MapEdit{X = 0x5f, Y = 0x34, Tile = GrassTile},
+			    new MapEdit{X = 0x60, Y = 0x34, Tile = GrassTile},
+			    new MapEdit{X = 0x61, Y = 0x34, Tile = GrassTile},
+			    new MapEdit{X = 0x62, Y = 0x34, Tile = GrassTile},
+			    new MapEdit{X = 0x60, Y = 0x35, Tile = GrassTile},
+			    new MapEdit{X = 0x61, Y = 0x35, Tile = DockBottomMid},
+			    new MapEdit{X = 0x62, Y = 0x35, Tile = DockBottomMid},
+			    new MapEdit{X = 0x63, Y = 0x35, Tile = GrassTile},
+			};
+		public static List<MapEdit> LefeinRiverDock =
+			new List<MapEdit>
+			{
+			    new MapEdit{X = 0xE0, Y = 0x3A, Tile = RiverTile},
+			    new MapEdit{X = 0xE0, Y = 0x3B, Tile = RiverTile},
+			    new MapEdit{X = 0xE0, Y = 0x3C, Tile = RiverBottomLeft},
+			    new MapEdit{X = 0xE1, Y = 0x3C, Tile = RiverTopRight},
+			    new MapEdit{X = 0xE1, Y = 0x3D, Tile = RiverTile},
+			    new MapEdit{X = 0xE1, Y = 0x3E, Tile = RiverTile},
+			    new MapEdit{X = 0xDF, Y = 0x3B, Tile = ForestTopRight},
+			    new MapEdit{X = 0xDF, Y = 0x3C, Tile = ForestMidRight},
+			    new MapEdit{X = 0xE0, Y = 0x3D, Tile = ForestTopRight},
+			    new MapEdit{X = 0xE0, Y = 0x3E, Tile = ForestBottomRight},
+			    new MapEdit{X = 0xE1, Y = 0x3B, Tile = ForestBottomLeft},
+			    new MapEdit{X = 0xE2, Y = 0x3C, Tile = ForestMidLeft},
+			    new MapEdit{X = 0xE2, Y = 0x3D, Tile = ForestMidLeft},
+			    new MapEdit{X = 0xE2, Y = 0x3E, Tile = ForestBottomLeft},
+			};
+		public static List<MapEdit> GaiaMountainPass =
+			new List<MapEdit>
+			{
+			    new MapEdit{X = 0xD4, Y = 0x22, Tile = MountainBottomRight},
+			    new MapEdit{X = 0xD3, Y = 0x23, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x23, Tile = GrassTopLeft},
+			    new MapEdit{X = 0xD5, Y = 0x23, Tile = GrassyMid},
+			    new MapEdit{X = 0xD6, Y = 0x23, Tile = GrassBottomRight},
+			    new MapEdit{X = 0xD7, Y = 0x23, Tile = MountainMidLeft},
+
+			    new MapEdit{X = 0xD3, Y = 0x24, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x24, Tile = GrassBottomLeft},
+			    new MapEdit{X = 0xD5, Y = 0x24, Tile = GrassBottomRight},
+			    new MapEdit{X = 0xD6, Y = 0x24, Tile = MountainTopLeft},
+
+			    new MapEdit{X = 0xD3, Y = 0x25, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x25, Tile = GrassTile},
+			    new MapEdit{X = 0xD5, Y = 0x25, Tile = MountainTopLeft},
+			    new MapEdit{X = 0xD3, Y = 0x26, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x26, Tile = GrassTile},
+			    new MapEdit{X = 0xD5, Y = 0x26, Tile = MountainMidLeft},
+			    new MapEdit{X = 0xD3, Y = 0x27, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x27, Tile = GrassTile},
+			    new MapEdit{X = 0xD5, Y = 0x27, Tile = MountainMidLeft},
+			    new MapEdit{X = 0xD3, Y = 0x28, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x28, Tile = GrassTile},
+			    new MapEdit{X = 0xD5, Y = 0x28, Tile = MountainBottomLeft},
+			    new MapEdit{X = 0xD3, Y = 0x29, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x29, Tile = GrassTile},
+			    new MapEdit{X = 0xD5, Y = 0x29, Tile = CoastTopLeft},
+			    new MapEdit{X = 0xD3, Y = 0x2A, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x2A, Tile = GrassTile},
+			    new MapEdit{X = 0xD5, Y = 0x2A, Tile = CoastLeft},
+			    new MapEdit{X = 0xD3, Y = 0x2B, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x2B, Tile = GrassTile},
+			    new MapEdit{X = 0xD5, Y = 0x2B, Tile = CoastLeft},
+			    new MapEdit{X = 0xD3, Y = 0x2C, Tile = MountainMidRight},
+			    new MapEdit{X = 0xD4, Y = 0x2C, Tile = GrassTile},
+			    new MapEdit{X = 0xD5, Y = 0x2C, Tile = CoastBottomLeft},
+			    new MapEdit{X = 0xD4, Y = 0x2D, Tile = MountainTopRight},
+			    new MapEdit{X = 0xD5, Y = 0x2D, Tile = GrassTile},
+			    new MapEdit{X = 0xD6, Y = 0x2D, Tile = CoastBottomLeft},
+			    new MapEdit{X = 0xD5, Y = 0x2E, Tile = MountainTopRight},
+			    new MapEdit{X = 0xD6, Y = 0x2E, Tile = GrassTile},
+			    new MapEdit{X = 0xD7, Y = 0x2E, Tile = CoastBottomLeft},
+			    new MapEdit{X = 0xD6, Y = 0x2F, Tile = MountainTopRight},
+			    new MapEdit{X = 0xD7, Y = 0x2F, Tile = GrassTile},
+			    new MapEdit{X = 0xD8, Y = 0x2F, Tile = CoastBottomLeft},
+			    new MapEdit{X = 0xD7, Y = 0x30, Tile = MountainTopRight},
+			    new MapEdit{X = 0xD8, Y = 0x30, Tile = ForestTopLeft},
+			    new MapEdit{X = 0xD9, Y = 0x30, Tile = ForestTopRight},
+			};
+
 		public static Dictionary<OverworldTeleportIndex, Palette> OverworldToPalette =
 			new Dictionary<OverworldTeleportIndex, Palette>
 			{
@@ -800,7 +986,7 @@ namespace FF1Lib
 				{OverworldTeleportIndex.Unused1,            Palette.Greyscale},
 				{OverworldTeleportIndex.Unused2,            Palette.Greyscale},
 			};
-		public static Dictionary<MapIndex, List<MapIndex>> ContinuedMapIndexForPalettes = 
+		public static Dictionary<MapIndex, List<MapIndex>> ContinuedMapIndexForPalettes =
             new Dictionary<MapIndex, List<MapIndex>>
 		    {
 				{ MapIndex.ConeriaCastle1F, new List<MapIndex> { MapIndex.ConeriaCastle2F } },
@@ -854,7 +1040,7 @@ namespace FF1Lib
 				OverworldTeleportIndex.Onrac
 			};
 		private static readonly List<OverworldTeleportIndex> StartingLocations = new List<OverworldTeleportIndex> {
-				OverworldTeleportIndex.ConeriaCastle1, OverworldTeleportIndex.TempleOfFiends1
+				OverworldTeleportIndex.Coneria, OverworldTeleportIndex.ConeriaCastle1, OverworldTeleportIndex.TempleOfFiends1
 			};
 
 		private static readonly Dictionary<MapLocation, (int x, int y)> ObjectiveNPCPositions = new Dictionary<MapLocation, (int x, int y)>
@@ -978,6 +1164,27 @@ namespace FF1Lib
 				}
 				Debug.Write("\n");
 			}
+		}
+
+		public void SwapMap(string fileName)
+		{
+			List<List<byte>> decompressedRows = new List<List<byte>>();
+
+			var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+			var resourcePath = assembly.GetManifestResourceNames().First(str => str.EndsWith(fileName));
+
+			using (Stream stream = assembly.GetManifestResourceStream(resourcePath))
+			using (BinaryReader rd = new BinaryReader(stream))
+			{
+				for (int i = 0; i < 256; i++)
+				{
+					var row = rd.ReadBytes(256);
+					decompressedRows.Add(new List<byte>(row));
+				}
+			}
+
+			var recompressedMap = CompressMapRows(decompressedRows);
+			PutCompressedMapRows(recompressedMap);
 		}
 
 		public void ApplyMapEdits()

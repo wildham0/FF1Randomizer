@@ -18,6 +18,21 @@ namespace FF1Lib
 		Invert
 	}
 
+	public enum ThiefAGI
+	{
+	    [Description("Vanilla")]
+	    Vanilla,
+
+	    [Description("80")]
+	    Agi80,
+
+	    [Description("100")]
+	    Agi100,
+
+	    [Description("120")]
+	    Agi120
+	}
+
 	public partial class FF1Rom
 	{
 		public void FixHouse(bool MPfix, bool HPfix)
@@ -26,7 +41,7 @@ namespace FF1Lib
 
 			if (MPfix)
 			{
-				Put(0x03B2CE, Blob.FromHex("20F3ABA91E20E0B2"));
+				Put(0x03B2CE, Blob.FromHex("20F3ABA91E20E0B2EAEA"));
 				Put(0x038816, Blob.FromHex("203B42A4AAACA6FF23A6B23223A7C0059C8A9F8EC5FFFFFFFFFFFFFF"));
 			}
 
@@ -71,11 +86,6 @@ namespace FF1Lib
 		{
 			//change the weapon bonus from +4 to +X
 			Put(0x326F5, new byte[] { (byte) weaponBonusValue });
-		}
-
-		public void FixChanceToRun()
-		{
-			Put(0x323EF, new byte[] { 0x82 });
 		}
 
 		public void FixWarpBug()
@@ -173,10 +183,42 @@ namespace FF1Lib
 
 		public void ThiefHitRate()
 		{
-			//Thief & Ninja growth rates are separate
-			Put(0x6CA5A, Blob.FromHex("04"));
-			Put(0x6CA60, Blob.FromHex("04"));
+		    //Thief & Ninja growth rates are separate
+		    var classData = ReadClassData();
+		    classData[(int)AuthClass.Thief].HitGrowth = 4;
+		    classData[(int)AuthClass.Ninja].HitGrowth = 4;
+		    WriteClassData(classData);
 		}
+
+	        public void BuffThiefAGI(ThiefAGI agi) {
+		    if (agi == ThiefAGI.Vanilla) return;
+
+		    // Increase thief starting agility, agility
+		    // growth, and starting evade to make it more
+		    // viable as a first-slot character.
+		    // See git commit message for details.
+
+		    var classData = ReadClassData();
+		    switch (agi)
+		    {
+			case ThiefAGI.Agi80:
+			    classData[(int)AuthClass.Thief].AgiStarting = 80;
+			    break;
+			case ThiefAGI.Agi100:
+			    classData[(int)AuthClass.Thief].AgiStarting = 100;
+			    break;
+			case ThiefAGI.Agi120:
+			    classData[(int)AuthClass.Thief].AgiStarting = 120;
+			    break;
+			default:
+			    break;
+		    }
+
+		    classData[(int)AuthClass.Thief].AgiGrowth = Enumerable.Repeat(true, 49).ToList();
+		    classData[(int)AuthClass.Thief].EvaStarting = (byte)Math.Min(classData[(int)AuthClass.Thief].AgiStarting + 48, 255);
+		    WriteClassData(classData);
+		}
+
 
 		public void KnightNinjaChargesForAllLevels()
 		{
@@ -189,12 +231,20 @@ namespace FF1Lib
 
 		public void RemakeStyleMasterMDEF()
 		{
-			Put(0x6CA65, Blob.FromHex("030203020202030204020202"));
+		    //Black Belt & Master growth rates are separate
+		    var classData = ReadClassData();
+		    classData[(int)AuthClass.BlackBelt].MDefGrowth = 3;
+		    classData[(int)AuthClass.Master].MDefGrowth = 4;
+		    WriteClassData(classData);
 		}
 
 		public void InvertedMDEF()
 		{
-			Put(0x6CA65, Blob.FromHex("020301030303020304030303"));
+		    var classData = ReadClassData();
+		    for (int i = 0; i < 12; i++) {
+			classData[i].MDefGrowth = (byte)(5 - classData[i].MDefGrowth);
+		    }
+		    WriteClassData(classData);
 		}
 
 		public void FixHitChanceCap()
@@ -207,5 +257,12 @@ namespace FF1Lib
 		{
 			Data[0x2E382] = 0xEA; // remove an extraneous LSR A when drawing monsters in a Large-Small mixed formation, so that the enemy in the third monster slot in such formations uses the correct palette
 		}
+
+	    public void Fix3DigitStats() {
+		// Fix character stat rendering so basic stats are
+		// rendered properly for values over 99
+		// See 0E_8DE4_FixPrintCharStat.asm
+		PutInBank(0x0E, 0x8DE4, Blob.FromHex("A910D010A911D00CA925D008A913D004A914D000186567AABD00618510A90085114C708EEAEAEAEAEAEAEAEA"));
+	    }
 	}
 }
